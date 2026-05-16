@@ -664,7 +664,7 @@ namespace PuckReplayMod
 
         public static bool IsReplayStick(Stick stick)
         {
-            if (stick == null)
+            if (!IsPlaybackActive() || stick == null)
             {
                 return false;
             }

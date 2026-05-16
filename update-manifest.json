@@ -1,6 +1,6 @@
 {
-  "latestVersion": "0.1.1",
-  "minimumRecommendedVersion": "0.1.1",
+  "latestVersion": "0.1.2",
+  "minimumRecommendedVersion": "0.1.2",
   "downloadUrl": "https://steamcommunity.com/sharedfiles/filedetails/?id=3726818657",
-  "notes": "Removes a misleading old replay files setting. Old replay mod files are not currently supported."
+  "notes": "Fixes normal in-game goal replays so replay sticks keep their stick tilt outside Replay Mod playback."
 }
