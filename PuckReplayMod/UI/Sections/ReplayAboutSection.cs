@@ -20,12 +20,7 @@ namespace PuckReplayMod
             parent.Add(ReplayUiTools.CreateSeparator());
             parent.Add(ReplayUiTools.CreateHeader("Updates"));
 
-            string manifestText = string.IsNullOrEmpty(ReplayModConstants.UpdateManifestUrl)
-                ? "Not configured"
-                : ReplayModConstants.UpdateManifestUrl;
-            parent.Add(CreateInfoRow("Update source", manifestText));
-
-            Label statusLabel = ReplayUiTools.CreateNote("Manual update checks are ready, but no GitHub manifest URL is configured yet.");
+            Label statusLabel = ReplayUiTools.CreateNote(ui.GetUpdateStatusMessage());
             parent.Add(statusLabel);
 
             VisualElement actions = new VisualElement();
@@ -42,8 +37,6 @@ namespace PuckReplayMod
 
             Button openButton = ReplayUiTools.CreateButton("OPEN UPDATE PAGE", ui.OpenUpdateDownloadUrl);
             actions.Add(openButton);
-
-            parent.Add(ReplayUiTools.CreateNote("Expected manifest JSON fields: latestVersion, minimumRecommendedVersion, downloadUrl, and notes. A GitHub raw file is enough for this."));
         }
 
         private static VisualElement CreateInfoRow(string labelText, string valueText)

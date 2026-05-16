@@ -59,7 +59,11 @@ namespace PuckReplayMod
         private float nextPlaybackUiDebugRealtime;
         private Task<ReplayUpdateCheckResult> updateCheckTask;
         private Label updateStatusLabel;
+        private Button updateBadgeButton;
+        private ReplayUpdateStatus updateStatus = ReplayUpdateStatus.Unknown;
+        private string updateStatusMessage = "Check whether a newer Replay Mod version is available.";
         private string updateDownloadUrl;
+        private bool hasStartedAutomaticUpdateCheck;
 
         internal ReplayModSettings Settings { get { return this.settings; } }
         internal ClientReplayRecorder Recorder { get { return this.recorder; } }
@@ -139,6 +143,8 @@ namespace PuckReplayMod
             this.StorageLabel = null;
             this.StorageUsageLabel = null;
             this.PlaybackLabel = null;
+            this.updateStatusLabel = null;
+            this.updateBadgeButton = null;
             this.sectionButtons.Clear();
             this.isManagerVisible = false;
             this.isMainMenuVisible = true;
@@ -206,6 +212,8 @@ namespace PuckReplayMod
                 this.StorageLabel = null;
                 this.StorageUsageLabel = null;
                 this.PlaybackLabel = null;
+                this.updateStatusLabel = null;
+                this.updateBadgeButton = null;
                 this.sectionButtons.Clear();
                 this.isManagerVisible = false;
                 this.mainMenuButtonAttached = false;
@@ -419,7 +427,12 @@ namespace PuckReplayMod
         internal void CheckForUpdates(Label statusLabel)
         {
             this.updateStatusLabel = statusLabel;
-            this.updateDownloadUrl = null;
+            if (this.updateCheckTask == null || this.updateCheckTask.IsCompleted)
+            {
+                this.updateStatus = ReplayUpdateStatus.Unknown;
+                this.updateDownloadUrl = null;
+                this.RefreshUpdateBadge();
+            }
 
             if (this.updateCheckTask != null && !this.updateCheckTask.IsCompleted)
             {
@@ -438,6 +451,11 @@ namespace PuckReplayMod
             {
                 return CheckForUpdatesCore();
             });
+        }
+
+        internal string GetUpdateStatusMessage()
+        {
+            return this.updateStatusMessage;
         }
 
         internal void OpenUpdateDownloadUrl()
@@ -1403,8 +1421,33 @@ namespace PuckReplayMod
             title.style.unityFontStyleAndWeight = FontStyle.Bold;
             header.Add(title);
 
-            header.Add(this.CreateVanillaCloseButton());
+            VisualElement headerActions = new VisualElement();
+            headerActions.style.flexDirection = FlexDirection.Row;
+            headerActions.style.alignItems = Align.Center;
+            header.Add(headerActions);
+
+            this.updateBadgeButton = ReplayUiTools.CreateButton("UPDATE AVAILABLE", delegate
+            {
+                this.ShowSection("About");
+            });
+            this.updateBadgeButton.style.height = 32f;
+            this.updateBadgeButton.style.minHeight = 32f;
+            this.updateBadgeButton.style.marginRight = 10f;
+            this.updateBadgeButton.style.paddingLeft = 10f;
+            this.updateBadgeButton.style.paddingRight = 10f;
+            this.updateBadgeButton.style.fontSize = 13f;
+            this.updateBadgeButton.style.backgroundColor = new StyleColor(new Color(0.86f, 0.66f, 0.18f, 1f));
+            this.updateBadgeButton.style.color = Color.black;
+            this.updateBadgeButton.style.display = DisplayStyle.None;
+            this.updateBadgeButton.RegisterCallback<MouseLeaveEvent>(delegate
+            {
+                this.RefreshUpdateBadge();
+            });
+            headerActions.Add(this.updateBadgeButton);
+
+            headerActions.Add(this.CreateVanillaCloseButton());
             this.managerPanel.Add(header);
+            this.RefreshUpdateBadge();
         }
 
         private VisualElement CreateVanillaCloseButton()
@@ -1576,6 +1619,7 @@ namespace PuckReplayMod
             {
                 result = new ReplayUpdateCheckResult
                 {
+                    Status = ReplayUpdateStatus.Error,
                     Message = "Update check failed: " + exception.GetBaseException().Message
                 };
             }
@@ -1583,22 +1627,54 @@ namespace PuckReplayMod
             this.updateCheckTask = null;
             if (result == null)
             {
+                this.updateStatus = ReplayUpdateStatus.Error;
                 this.SetUpdateStatus("Update check failed.");
+                this.RefreshUpdateBadge();
                 return;
             }
 
+            this.updateStatus = result.Status;
             this.updateDownloadUrl = result.DownloadUrl;
             this.SetUpdateStatus(result.Message);
+            this.RefreshUpdateBadge();
         }
 
         private void SetUpdateStatus(string message)
         {
+            this.updateStatusMessage = string.IsNullOrEmpty(message)
+                ? "Check whether a newer Replay Mod version is available."
+                : message;
+
             if (this.updateStatusLabel != null)
             {
-                this.updateStatusLabel.text = message;
+                this.updateStatusLabel.text = this.updateStatusMessage;
             }
 
-            ReplayModLog.Info("Update check: " + message);
+            ReplayModLog.Info("Update check: " + this.updateStatusMessage);
+        }
+
+        private void RefreshUpdateBadge()
+        {
+            if (this.updateBadgeButton == null)
+            {
+                return;
+            }
+
+            bool shouldShow = this.updateStatus == ReplayUpdateStatus.UpdateAvailable ||
+                this.updateStatus == ReplayUpdateStatus.UpdateRecommended;
+            this.updateBadgeButton.style.display = shouldShow ? DisplayStyle.Flex : DisplayStyle.None;
+            if (!shouldShow)
+            {
+                return;
+            }
+
+            bool recommended = this.updateStatus == ReplayUpdateStatus.UpdateRecommended;
+            this.updateBadgeButton.text = recommended ? "UPDATE RECOMMENDED" : "UPDATE AVAILABLE";
+            this.updateBadgeButton.tooltip = this.updateStatusMessage;
+            this.updateBadgeButton.style.backgroundColor = new StyleColor(recommended
+                ? new Color(0.9f, 0.28f, 0.2f, 1f)
+                : new Color(0.86f, 0.66f, 0.18f, 1f));
+            this.updateBadgeButton.style.color = Color.black;
         }
 
         private static ReplayUpdateCheckResult CheckForUpdatesCore()
@@ -1614,6 +1690,7 @@ namespace PuckReplayMod
                     {
                         return new ReplayUpdateCheckResult
                         {
+                            Status = ReplayUpdateStatus.Error,
                             Message = "Update manifest did not include a latest version."
                         };
                     }
@@ -1629,6 +1706,7 @@ namespace PuckReplayMod
                     {
                         return new ReplayUpdateCheckResult
                         {
+                            Status = ReplayUpdateStatus.UpdateRecommended,
                             DownloadUrl = downloadUrl,
                             Message = "Update recommended. Installed " + ReplayModConstants.ModVersion + ", recommended " + minimum + ", latest " + latest + "." + notes
                         };
@@ -1638,6 +1716,7 @@ namespace PuckReplayMod
                     {
                         return new ReplayUpdateCheckResult
                         {
+                            Status = ReplayUpdateStatus.UpdateAvailable,
                             DownloadUrl = downloadUrl,
                             Message = "Update available. Installed " + ReplayModConstants.ModVersion + ", latest " + latest + "." + notes
                         };
@@ -1645,6 +1724,7 @@ namespace PuckReplayMod
 
                     return new ReplayUpdateCheckResult
                     {
+                        Status = ReplayUpdateStatus.UpToDate,
                         DownloadUrl = downloadUrl,
                         Message = "Replay Mod is up to date. Installed " + ReplayModConstants.ModVersion + ", latest " + latest + "."
                     };
@@ -1654,6 +1734,7 @@ namespace PuckReplayMod
             {
                 return new ReplayUpdateCheckResult
                 {
+                    Status = ReplayUpdateStatus.Error,
                     Message = "Update check failed: " + exception.Message
                 };
             }
@@ -1704,8 +1785,18 @@ namespace PuckReplayMod
 
         private class ReplayUpdateCheckResult
         {
+            public ReplayUpdateStatus Status { get; set; }
             public string Message { get; set; }
             public string DownloadUrl { get; set; }
+        }
+
+        private enum ReplayUpdateStatus
+        {
+            Unknown,
+            UpToDate,
+            UpdateAvailable,
+            UpdateRecommended,
+            Error
         }
 
         private VisualElement CreateSectionContent()
@@ -1766,6 +1857,7 @@ namespace PuckReplayMod
             this.managerPanel.pickingMode = PickingMode.Position;
             this.ShowSection(this.selectedSection);
             this.RefreshPlaybackControls();
+            this.StartAutomaticUpdateCheck();
 
             try
             {
@@ -1777,6 +1869,22 @@ namespace PuckReplayMod
             catch (Exception)
             {
             }
+        }
+
+        private void StartAutomaticUpdateCheck()
+        {
+            if (this.hasStartedAutomaticUpdateCheck ||
+                string.IsNullOrEmpty(ReplayModConstants.UpdateManifestUrl) ||
+                (this.updateCheckTask != null && !this.updateCheckTask.IsCompleted))
+            {
+                return;
+            }
+
+            this.hasStartedAutomaticUpdateCheck = true;
+            this.updateCheckTask = Task.Run(delegate
+            {
+                return CheckForUpdatesCore();
+            });
         }
 
         private void TickReplayLibraryIndex()
