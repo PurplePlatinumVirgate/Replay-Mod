@@ -19,6 +19,8 @@ namespace PuckReplayMod
 
         public ReplayModUiService Ui { get; private set; }
 
+        public bool IsDedicatedServer { get; private set; }
+
         private bool recorderUpdateErrorLogged;
         private bool uiUpdateErrorLogged;
         private bool wasRecording;
@@ -61,17 +63,35 @@ namespace PuckReplayMod
             }
 
             Instance = this;
+            this.IsDedicatedServer = ApplicationManager.IsDedicatedGameServer;
             this.Settings = ReplayModSettings.Load();
             this.Storage = new ReplayStorageService();
             this.Storage.Initialize();
             this.Reader = new ReplayFileReader();
-            this.Recorder = new ClientReplayRecorder(this.Settings, this.Storage);
+            this.Recorder = new ClientReplayRecorder(this.Settings, this.Storage, this.IsDedicatedServer);
             this.Recorder.Initialize();
-            this.Playback = new ReplayPlaybackService(this.Settings, this.Reader, this.Recorder);
-            this.Ui = new ReplayModUiService(this.Settings, this.Recorder, this.Storage, this.Reader, this.Playback);
-            this.Ui.Initialize();
-            EventManager.AddEventListener("Event_OnClientStarted", this.Event_OnClientStarted);
-            EventManager.AddEventListener("Event_OnClientStopped", this.Event_OnClientStopped);
+
+            if (this.IsDedicatedServer)
+            {
+                // A headless dedicated server has no in-game UI or replay viewer; only the
+                // recorder runs, capturing the server-authoritative match and saving it locally.
+                bool serverRecordingEnabled = this.Settings == null || this.Settings.EnableServerSideRecording;
+                if (!serverRecordingEnabled)
+                {
+                    this.Recorder.SetRecordingSuppressed(true, "server-side recording disabled in settings");
+                }
+
+                ReplayModLog.Info("Dedicated server detected; server-side replay recording " +
+                    (serverRecordingEnabled ? "enabled." : "disabled."));
+            }
+            else
+            {
+                this.Playback = new ReplayPlaybackService(this.Settings, this.Reader, this.Recorder);
+                this.Ui = new ReplayModUiService(this.Settings, this.Recorder, this.Storage, this.Reader, this.Playback);
+                this.Ui.Initialize();
+                EventManager.AddEventListener("Event_OnClientStarted", this.Event_OnClientStarted);
+                EventManager.AddEventListener("Event_OnClientStopped", this.Event_OnClientStopped);
+            }
         }
 
         private void Update()
@@ -182,8 +202,11 @@ namespace PuckReplayMod
 
         private void OnDestroy()
         {
-            EventManager.RemoveEventListener("Event_OnClientStarted", this.Event_OnClientStarted);
-            EventManager.RemoveEventListener("Event_OnClientStopped", this.Event_OnClientStopped);
+            if (!this.IsDedicatedServer)
+            {
+                EventManager.RemoveEventListener("Event_OnClientStarted", this.Event_OnClientStarted);
+                EventManager.RemoveEventListener("Event_OnClientStopped", this.Event_OnClientStopped);
+            }
 
             if (this.Ui != null)
             {

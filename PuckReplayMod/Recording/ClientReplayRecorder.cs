@@ -14,6 +14,7 @@ namespace PuckReplayMod
         private const int KeyframeIntervalSeconds = 30;
         private readonly ReplayModSettings settings;
         private readonly ReplayStorageService storage;
+        private readonly bool isDedicatedServer;
         private readonly List<Player> activeBodyPlayers = new List<Player>(16);
         private readonly List<Puck> activePucks = new List<Puck>(16);
         private readonly List<Task<ReplaySaveResult>> pendingSaveTasks = new List<Task<ReplaySaveResult>>();
@@ -47,10 +48,11 @@ namespace PuckReplayMod
         private int captureProfileFrames;
         private string startReason;
 
-        public ClientReplayRecorder(ReplayModSettings settings, ReplayStorageService storage)
+        public ClientReplayRecorder(ReplayModSettings settings, ReplayStorageService storage, bool isDedicatedServer)
         {
             this.settings = settings;
             this.storage = storage;
+            this.isDedicatedServer = isDedicatedServer;
         }
 
         public event Action RecordingStateChanged;
@@ -431,6 +433,10 @@ namespace PuckReplayMod
         private void Subscribe()
         {
             EventManager.AddEventListener("Event_OnClientStopped", this.Event_OnClientStopped);
+            if (this.isDedicatedServer)
+            {
+                EventManager.AddEventListener("Event_Server_OnServerStopped", this.Event_Server_OnServerStopped);
+            }
             EventManager.AddEventListener("Event_Everyone_OnGameStateChanged", this.Event_Everyone_OnGameStateChanged);
             EventManager.AddEventListener("Event_Everyone_OnPlayerSpawned", this.Event_Everyone_OnPlayerSpawned);
             EventManager.AddEventListener("Event_Everyone_OnPlayerDespawned", this.Event_Everyone_OnPlayerDespawned);
@@ -459,6 +465,10 @@ namespace PuckReplayMod
         private void Unsubscribe()
         {
             EventManager.RemoveEventListener("Event_OnClientStopped", this.Event_OnClientStopped);
+            if (this.isDedicatedServer)
+            {
+                EventManager.RemoveEventListener("Event_Server_OnServerStopped", this.Event_Server_OnServerStopped);
+            }
             EventManager.RemoveEventListener("Event_Everyone_OnGameStateChanged", this.Event_Everyone_OnGameStateChanged);
             EventManager.RemoveEventListener("Event_Everyone_OnPlayerSpawned", this.Event_Everyone_OnPlayerSpawned);
             EventManager.RemoveEventListener("Event_Everyone_OnPlayerDespawned", this.Event_Everyone_OnPlayerDespawned);
@@ -488,6 +498,15 @@ namespace PuckReplayMod
         {
             this.autoRecordingPausedByManualStop = false;
             this.StopRecording(true, "client stopped");
+            this.ClearActiveObjects();
+        }
+
+        private void Event_Server_OnServerStopped(Dictionary<string, object> message)
+        {
+            // On a dedicated server there is no client lifecycle, so the server stopping is
+            // the signal to flush and save the match currently being recorded.
+            this.autoRecordingPausedByManualStop = false;
+            this.StopRecording(true, "server stopped");
             this.ClearActiveObjects();
         }
 
@@ -765,7 +784,15 @@ namespace PuckReplayMod
 
         private void HandleSplitRecordingGameState(GameStatePayload gameState)
         {
-            if (this.settings == null || !this.settings.SplitRecordingsByGameEnd || !this.IsRecording)
+            if (this.settings == null || !this.IsRecording)
+            {
+                return;
+            }
+
+            // A dedicated server runs indefinitely across many matches, so it always splits at
+            // game end to save one replay per match instead of a single ever-growing recording.
+            bool splitByGameEnd = this.settings.SplitRecordingsByGameEnd || this.isDedicatedServer;
+            if (!splitByGameEnd)
             {
                 return;
             }
@@ -1485,6 +1512,13 @@ namespace PuckReplayMod
                         return value;
                     }
                 }
+
+                // On a dedicated server the replicated Server value may be empty, so fall back to
+                // the loaded server config name.
+                if (serverManager != null && serverManager.ServerConfig != null && !string.IsNullOrEmpty(serverManager.ServerConfig.name))
+                {
+                    return serverManager.ServerConfig.name;
+                }
             }
             catch
             {
@@ -1495,6 +1529,11 @@ namespace PuckReplayMod
 
         private string GetRecorderName()
         {
+            if (this.isDedicatedServer)
+            {
+                return "Dedicated Server";
+            }
+
             try
             {
                 PlayerManager playerManager = MonoBehaviourSingleton<PlayerManager>.Instance;
