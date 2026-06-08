@@ -29,17 +29,29 @@
   </ItemGroup>
 
   <Target Name="PostBuildMoveDll" AfterTargets="Build">
-    <PropertyGroup>
-      <TargetDir>F:\Steam\steamapps\common\Puck\Plugins\Replay Mod</TargetDir>
-      <WorkshopDir>F:\Downloads\SteamWorkshopUploader\WorkshopContent\Replay Mod</WorkshopDir>
-    </PropertyGroup>
+    <!-- Deploy targets across machines. A target is only used when its Parent folder
+         already exists (i.e. Puck / the workshop tool is installed there), so a missing
+         drive or Steam library never fails the build. -->
+    <ItemGroup>
+      <DeployTarget Include="F:\Steam\steamapps\common\Puck\Plugins\Replay Mod">
+        <Parent>F:\Steam\steamapps\common\Puck\Plugins</Parent>
+      </DeployTarget>
+      <DeployTarget Include="C:\Program Files (x86)\Steam\steamapps\common\Puck\Plugins\Replay Mod">
+        <Parent>C:\Program Files (x86)\Steam\steamapps\common\Puck\Plugins</Parent>
+      </DeployTarget>
+      <DeployTarget Include="F:\Downloads\SteamWorkshopUploader\WorkshopContent\Replay Mod">
+        <Parent>F:\Downloads\SteamWorkshopUploader\WorkshopContent</Parent>
+      </DeployTarget>
+    </ItemGroup>
 
-    <MakeDir Directories="$(TargetDir)" />
-    <MakeDir Directories="$(WorkshopDir)" />
-    <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll" DestinationFolder="$(TargetDir)" OverwriteReadOnlyFiles="true" />
-    <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll" DestinationFolder="$(WorkshopDir)" OverwriteReadOnlyFiles="true" />
-
-    <Message Importance="high" Text="Copied $(AssemblyName).dll to $(TargetDir)" />
+    <MakeDir Directories="%(DeployTarget.Identity)" Condition="Exists('%(DeployTarget.Parent)')" />
+    <Copy SourceFiles="$(OutputPath)$(AssemblyName).dll"
+          DestinationFolder="%(DeployTarget.Identity)"
+          OverwriteReadOnlyFiles="true"
+          Condition="Exists('%(DeployTarget.Parent)')" />
+    <Message Importance="high"
+             Text="Deployed $(AssemblyName).dll to %(DeployTarget.Identity)"
+             Condition="Exists('%(DeployTarget.Parent)')" />
   </Target>
 
 </Project>
